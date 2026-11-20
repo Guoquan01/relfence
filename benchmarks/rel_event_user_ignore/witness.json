@@ -1,0 +1,80 @@
+{
+  "comparison": {
+    "fixed_validation_rows": 2013,
+    "fixed_vs_published_row_differences": 0,
+    "padded_validation_rows": 2172,
+    "pre_fix_validation_rows": 4185,
+    "same_label_overlap": 2172,
+    "train_validation_overlap": 2172
+  },
+  "dataset_revision": "21d7284df2a9621c71f21bc4a1a30b7e8effb8dd",
+  "example": {
+    "cutoff": "2012-11-21T00:00:00",
+    "fixed_validation_target": 0,
+    "old_validation_target": 1,
+    "padded_anchor": "2012-11-14T00:00:00",
+    "padded_invitations": 3,
+    "safe_invitations": 1,
+    "source_rows": [
+      {
+        "event": 2251093,
+        "event_start_time": "2012-11-18T02:00:00.003000",
+        "interest_rows": [
+          {
+            "interest_timestamp": "2012-11-16T22:16:17.650000",
+            "invited": 0,
+            "user_id": 34215
+          }
+        ],
+        "start_time": "2012-11-18T02:00:00.003000",
+        "status": "invited"
+      },
+      {
+        "event": 2255126,
+        "event_start_time": "2012-11-18T03:00:00.003000",
+        "interest_rows": [],
+        "start_time": "2012-11-18T03:00:00.003000",
+        "status": "invited"
+      },
+      {
+        "event": 2274763,
+        "event_start_time": "2012-11-18T20:00:00.003000",
+        "interest_rows": [
+          {
+            "interest_timestamp": "2012-11-14T21:40:20.329000",
+            "invited": 1,
+            "user_id": 10268
+          }
+        ],
+        "start_time": "2012-11-18T20:00:00.003000",
+        "status": "invited"
+      },
+      {
+        "event": 2412691,
+        "event_start_time": "2012-11-25T02:00:00.003000",
+        "interest_rows": [],
+        "start_time": "2012-11-25T02:00:00.003000",
+        "status": "invited"
+      }
+    ],
+    "train_target": 1,
+    "user": 2991
+  },
+  "finding": "TRAIN_VALIDATION_OVERLAP_IN_PRE_FIX_LABELS",
+  "manifest_sha256": "c8b6a11abda1dbaa512a370f05d1abf6550b869ce4e2032d7ce80dd7c1d29cc0",
+  "repro_duckdb_sql": "WITH anchor AS (\n    SELECT 2991::BIGINT AS \"user\", TIMESTAMP '2012-11-21 00:00:00' AS cutoff\n), evidence AS (\n    SELECT a.cutoff, a.\"user\", ea.event, ea.status, ea.start_time,\n           e.start_time AS event_start_time,\n           (\n               SELECT list(struct_pack(user_id := ei.\"user\", interest_timestamp := ei.timestamp, invited := ei.invited)\n                           ORDER BY ei.timestamp, ei.\"user\", ei.invited)\n               FROM read_parquet('db/event_interest.parquet') ei WHERE ei.event = ea.event\n           ) AS interest_rows\n    FROM anchor a\n    JOIN read_parquet('db/event_attendees.parquet') ea\n      ON ea.user_id = a.\"user\" AND ea.start_time > a.cutoff - INTERVAL '7 days'\n     AND ea.start_time <= a.cutoff + INTERVAL '7 days'\n    JOIN read_parquet('db/events.parquet') e ON e.event_id = ea.event\n), windows AS (\n    SELECT \"user\", cutoff,\n           count(*) FILTER (WHERE start_time <= cutoff AND status = 'invited') AS padded_invitations,\n           count(*) FILTER (WHERE start_time > cutoff AND status = 'invited') AS safe_invitations,\n           list(struct_pack(event := event, status := status, start_time := start_time,\n                            event_start_time := event_start_time,\n                            interest_rows := coalesce(interest_rows, []))\n                ORDER BY start_time, event, status) AS source_rows\n    FROM evidence GROUP BY \"user\", cutoff\n)\nSELECT w.*, old_train.timestamp AS padded_anchor, old_train.target AS train_target,\n       (w.padded_invitations > 2)::INTEGER AS old_validation_target,\n       published_val.target AS fixed_validation_target\nFROM windows w\nJOIN read_parquet('tasks/user-ignore/train.parquet') old_train\n  ON old_train.\"user\" = w.\"user\" AND old_train.timestamp = w.cutoff - INTERVAL '7 days'\nJOIN read_parquet('tasks/user-ignore/val.parquet') published_val\n  ON published_val.\"user\" = w.\"user\" AND published_val.timestamp = w.cutoff\nWHERE old_train.target = (w.padded_invitations > 2)::INTEGER\n  AND published_val.target = (w.safe_invitations > 2)::INTEGER\n  AND old_train.target <> published_val.target;",
+  "task_id": "rel-event/user-ignore",
+  "train": {
+    "anchors": 22,
+    "first_anchor": "2012-06-20T00:00:00",
+    "last_anchor": "2012-11-14T00:00:00",
+    "rows": 19239
+  },
+  "upstream_before": "04d7af7f0571ace8943cf0469a852c4733d0af53",
+  "upstream_fix": "0d47fe0c8a1a51aaf97ab485f4a028e290f97c67",
+  "val": {
+    "anchor": "2012-11-21T00:00:00",
+    "anchors": 1,
+    "rows": 2013
+  }
+}

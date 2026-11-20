@@ -1,0 +1,18 @@
+{
+  "dataset_revision": "21d7284df2a9621c71f21bc4a1a30b7e8effb8dd",
+  "dataset_url": "https://huggingface.co/datasets/stanford-star/relbench-v1",
+  "sha256": {
+    "db/event_attendees.parquet": "7b32cf71a518ac9065bb0a31f58edf110c72853bd4bd4cad48ac06d95184b27c",
+    "db/event_interest.parquet": "fbce09555916c915d38a14a7701f182042219431254c62b85718a6b25a04cb90",
+    "db/events.parquet": "3c9da41a9d48bec1bcbcde7bca1bf2565a94b746619d98a56aa33f6c56dfb3f0",
+    "db/users.parquet": "5228f18d331e1fe656a1d0d446b4bb8284db4e79a316e09c6e4c786f310f5dc0",
+    "manifest.yaml": "1858c485111b61426b062eb2fdb84f44c04582faefb1c2468d3c77664bedc62f",
+    "tasks/user-ignore/manifest.yaml": "54c6ca4ba533b7d0d5a97b380259e50eb5ea3146134988d66ac9996901b89f48",
+    "tasks/user-ignore/train.parquet": "862084002e142b96e83d717b7d46ffbbf773213fc1c6ed12884261c44e4b65bd",
+    "tasks/user-ignore/val.parquet": "0e674289e40faa7712d1b1bc33b65ca1d7b9b6f79ebaa49ac4f47f9740dff233"
+  },
+  "test_timestamp": "2012-11-29",
+  "upstream_before": "04d7af7f0571ace8943cf0469a852c4733d0af53",
+  "upstream_fix": "0d47fe0c8a1a51aaf97ab485f4a028e290f97c67",
+  "upstream_pr": "https://github.com/stanford-star/relbench/pull/357"
+}

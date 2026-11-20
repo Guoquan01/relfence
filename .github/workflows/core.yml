@@ -16,6 +16,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install '.[test]'
       - run: python -m pytest -q
+      - name: Smoke-test the native Parquet lineage benchmark
+        run: python benchmarks/million_edges/run_benchmark.py --edges 4096 --output-dir "$RUNNER_TEMP/relfence-parquet"
       - name: Verify the fixture generator reproduces the checked-in bytes
         run: |
           python examples/seed/generate.py

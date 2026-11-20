@@ -28,7 +28,9 @@ exit status 1
 
 ### Executable alpha profile
 
-The alpha accepts pinned local CSV and Parquet tables with single-column keys. Both JSONL files in `model_inputs` are pinned, using `sha256` and `lineage_map_sha256`. Resolve paths relative to the manifest. Each input carries a prediction ID, entity ID, terminal row key as its item ID, and the prediction cutoff. Each lineage record maps the same prediction and item IDs to an ordered list of table names and raw primary keys, starting at the prediction entity. Exactly one declared foreign key must connect each adjacent pair. [Complete example](./examples/seed/clean.manifest.json)
+The alpha accepts pinned local CSV and Parquet tables with single-column keys. Each file in `model_inputs` can be JSONL or Parquet and is pinned with `sha256` or `lineage_map_sha256`. Resolve paths relative to the manifest. Each input carries a string prediction ID, entity ID, terminal row key as its item ID, and the prediction cutoff. Each lineage record maps the same prediction and item IDs to an ordered list of table names and raw primary keys, starting at the prediction entity. Exactly one declared foreign key must connect each adjacent pair. [JSONL example](./examples/seed/clean.manifest.json) · [Parquet generator](./benchmarks/million_edges/run_benchmark.py)
+
+For Parquet, store `prediction_id`, `item_id`, and `entity_id` as strings, and store `join_path` as a list of structs with string `table` and `pk` fields. The manifest's cutoff column and optional `valid_from` struct field accept timestamps, dates, or timestamp strings. Naive timestamps are interpreted as UTC.
 
 The caller supplies the prediction cutoff and the extraction. The checker verifies paths in batches against the pinned rows. Inputs omitted from both the extraction and its lineage are outside the audit. An empty extraction or an unresolved path returns exit 2.
 
