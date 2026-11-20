@@ -23,3 +23,47 @@ jobs:
           relfence check --manifest examples/seed/l2.manifest.json --out examples/seed/l2.witness.json || status=$?
           test "$status" -eq 1
           git diff --exit-code -- examples/seed
+  action:
+    name: Composite action (${{ matrix.fixture }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - fixture: clean
+            exit-code: '0'
+            verdict: PASS
+          - fixture: l2
+            exit-code: '1'
+            verdict: FAIL_LEAKAGE
+          - fixture: missing
+            exit-code: '2'
+            verdict: INSUFFICIENT_EVIDENCE
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./
+        id: audit
+        continue-on-error: ${{ matrix.exit-code != '0' }}
+        with:
+          manifest: examples/seed/${{ matrix.fixture }}.manifest.json
+      - name: Verify the exit code, report, and artifact
+        env:
+          AUDIT_EXIT_CODE: ${{ steps.audit.outputs.exit-code }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          ARTIFACT_ID: ${{ steps.audit.outputs.artifact-id }}
+          EXPECTED_EXIT_CODE: ${{ matrix.exit-code }}
+          EXPECTED_OUTCOME: ${{ matrix.exit-code == '0' && 'success' || 'failure' }}
+          EXPECTED_VERDICT: ${{ matrix.verdict }}
+        run: |
+          test "$AUDIT_EXIT_CODE" = "$EXPECTED_EXIT_CODE"
+          test "$AUDIT_OUTCOME" = "$EXPECTED_OUTCOME"
+          test -n "$ARTIFACT_ID"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path("relfence-report.json").read_bytes())
+          assert report["verdict"] == os.environ["EXPECTED_VERDICT"]
+          PY

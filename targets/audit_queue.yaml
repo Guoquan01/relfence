@@ -1,0 +1,83 @@
+schema_version: 1
+execution: planned
+
+# A dataset entry expands to one queued target per task in its list.
+benchmark_targets:
+  relbench_v1:
+    status: queued
+    source: https://huggingface.co/datasets/stanford-star/relbench-v1
+    revision: 21d7284df2a9621c71f21bc4a1a30b7e8effb8dd
+    datasets:
+      rel-amazon: [item-churn, item-ltv, user-churn, user-item-purchase, user-item-rate, user-item-review, user-ltv]
+      rel-avito: [ad-ctr, user-ad-visit, user-clicks, user-visits]
+      rel-event: [user-attendance, user-ignore, user-repeat]
+      rel-f1: [driver-dnf, driver-position, driver-top3]
+      rel-hm: [item-sales, user-churn, user-item-purchase]
+      rel-stack: [post-post-related, post-votes, user-badge, user-engagement, user-post-comment]
+      rel-trial: [condition-sponsor-run, site-sponsor-run, site-success, study-adverse, study-outcome]
+  relbench_v2_selected:
+    status: queued
+    source: https://huggingface.co/datasets/stanford-star/relbench-v2-extra
+    revision: 6b02dae348f68ecf5b08d8587ccdc839c2c33e3e
+    datasets:
+      rel-arxiv: [paper-paper-cocitation]
+      rel-f1: [results-position]
+      rel-ratebeer: [user-beer-liked]
+      rel-salt: [item-shippoint]
+
+baseline_targets:
+  - id: relbench-reference
+    status: queued
+    repository: https://github.com/stanford-star/relbench
+    ref: v3.1.0
+    entry_points: [examples/gnn_entity.py, examples/lightgbm_entity.py, examples/hybrid_entity.py]
+    pilot_task: rel-event/user-ignore
+    audit_focus: Trace sampled neighbors, entity features, and cached embeddings to their source rows.
+  - id: relgt
+    status: queued
+    repository: https://github.com/snap-stanford/relgt
+    ref: 19e423ca3e7cac761130aba790857f2dc3a46ef7
+    entry_points: [main_node_ddp.py, expts/run-large-base-experiments.sh]
+    pilot_task: rel-stack/post-votes
+    audit_focus: Trace rows contributing to temporal graph tokens and their precomputed subgraphs.
+  - id: relarena
+    status: queued
+    repository: https://github.com/PriorLabs/relarena
+    ref: relarena-v0.1.5
+    entry_points: [relarena]
+    pilot_task: rel-event/user-ignore
+    audit_focus: Trace input data and cached features across tuning, refit, and test cutoffs.
+  - id: rdblearn
+    status: queued
+    repository: https://github.com/HKUSHXLab/rdblearn
+    ref: v0.1.2
+    entry_points: [examples/rdblearn_relbench_reg_example.py]
+    pilot_task: rel-avito/ad-ctr
+    audit_focus: Trace the rows and label maturity behind deep feature synthesis and target-history features.
+  - id: featuretools-dfs
+    status: queued
+    repository: https://github.com/alteryx/featuretools
+    ref: v1.31.0
+    entry_points: [featuretools/synthesis/dfs.py]
+    pilot_task: rel-hm/item-sales
+    audit_focus: Build a Featuretools adapter and compare its cutoff-table aggregates with a DuckDB reference over the same input rows.
+
+discovery_targets:
+  - id: arxiv-cs-lg-relational-temporal
+    status: proposed
+    source: https://export.arxiv.org/api/query
+    documentation: https://info.arxiv.org/help/api/user-manual.html
+    query: 'cat:cs.LG AND (all:"relational learning" OR all:"temporal tabular" OR all:RelBench)'
+    cadence: weekly
+    output: Candidate public repositories with a paper link, runnable entry point, and immutable source commit.
+
+# For each queued audit, apply these steps in order to the resolved code and data revisions.
+playbook:
+  - provision_clean_vm
+  - clone_and_lock_dependencies
+  - trace_model_input_lineage
+  - materialize_parquet_and_manifest
+  - run_relfence_check
+  - replay_any_sql_witness_in_fresh_duckdb
+  - run_paired_fixed_split_evaluation_when_supported
+  - draft_upstream_report_for_verified_findings

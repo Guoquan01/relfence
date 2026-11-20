@@ -1,0 +1,50 @@
+name: RelFence audit
+description: Audit a pinned relational input manifest for temporal leakage.
+inputs:
+  manifest:
+    description: Path to the manifest in the caller's workspace.
+    required: true
+  out:
+    description: Path for the JSON report in the caller's workspace.
+    default: relfence-report.json
+  python-version:
+    description: Python version to use for the audit.
+    default: '3.12'
+outputs:
+  exit-code:
+    description: RelFence CLI exit code (0 for pass, 1 for leakage, 2 for insufficient evidence).
+    value: ${{ steps.audit.outputs.exit-code }}
+  artifact-id:
+    description: GitHub artifact ID for the JSON report.
+    value: ${{ steps.upload.outputs.artifact-id }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install RelFence
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH"
+    - name: Run the audit and write its summary
+      id: audit
+      shell: bash
+      env:
+        RELFENCE_MANIFEST: ${{ inputs.manifest }}
+        RELFENCE_OUT: ${{ inputs.out }}
+      run: |
+        # CLI diagnostics can contain manifest text.
+        resume=$(python -c 'import uuid; print(uuid.uuid4().hex)')
+        printf '::stop-commands::%s\n' "$resume"
+        status=0
+        python "$GITHUB_ACTION_PATH/.github/run_action.py" 2>&1 || status=$?
+        printf '::%s::\n' "$resume"
+        exit "$status"
+    - name: Upload the audit report
+      id: upload
+      if: ${{ !cancelled() && steps.audit.outputs.artifact-path != '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.audit.outputs.artifact-name }}
+        path: ${{ steps.audit.outputs.artifact-path }}
+        if-no-files-found: error

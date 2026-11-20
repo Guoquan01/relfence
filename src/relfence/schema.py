@@ -25,6 +25,8 @@ class Table(Record):
     available_at_col: Name
     foreign_keys: list[ForeignKey]
     is_mutable: bool
+    valid_from_col: Name | None = None
+    valid_to_col: Name | None = None
 
 
 class Task(Record):
@@ -66,6 +68,7 @@ class Item(Record):
 class Hop(Record):
     table: Name
     pk: Name
+    valid_from: Name | None = None
 
 
 class Lineage(Record):

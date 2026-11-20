@@ -1,19 +1,21 @@
-# Parallel agent assignments
+# Audit workstreams
 
-Give each agent its block below in a separate checkout of the same commit. The three agents share the [input and witness contract](./SPEC.md). The public seed fixtures are practice cases. Reserve new cases for the blind evaluation.
+## Repository release gate
 
-### Agent A · Reference oracle
+RelFence includes a batched DuckDB oracle for CSV and Parquet, validity-interval checks for mutable rows, a reusable GitHub Action, and a Memgraph CI job with runnable SQL witnesses. The public two-hop vote fixture exercises both passing and failing extractions. [Input and witness contract](./SPEC.md) · [Reusable action](./action.yml) · [Cypher controls](./examples/cypher/README.md)
 
-> Work only on the DuckDB checker and its unit tests. Read the contract and the pinned raw tables. Implement as-of reads for a mutable table with version intervals. Prove a future version was used by returning its key, cutoff and interval in runnable SQL. Cover a clean historical version, an exact-boundary case and missing or overlapping intervals. Return a PR, the commands you ran and one replayable witness. Keep extraction code out of this workstream.
+## Planned recurring Devin Bot audits
 
-### Agent B · Benchmark adapters
+The proposed workflow assigns these responsibilities to independent checkouts in clean VMs. The [audit queue](./targets/audit_queue.yaml) supplies the public target IDs, starting revisions, and per-repository steps. The [scoreboard](./SCOREBOARD.md) records observed results and pending work.
 
-> Take one public RelBench task first. Record the dataset version, task name and split so another person can fetch exactly what you used. Export one graph neighborhood and one historical context bundle with the row keys, foreign-key hops and timestamps actually read by each pipeline. Start with one prediction that a reviewer can trace by hand. Return a PR with the two manifests, their reproduction commands and any input you could not trace. Expand to classification, regression and ranking after the first pair reproduces.
+### 1. Target discovery and lineage tracing
 
-### Agent C · Independent evaluation
+Resolve the repository and data revisions, lock dependencies, and trace the rows and versions the model actually consumes. Export Parquet inputs, the row keys, foreign-key hops, timestamps, and a command to regenerate each manifest. Record any evidence gaps. Begin with `rel-event/user-ignore` (classification), then cover `rel-stack/post-votes` (regression) and `rel-hm/user-item-purchase` (recommendation). Review the proposed weekly arXiv scan for public code that can be queued with a runnable entry point. [Benchmark adapters](https://github.com/Guoquan01/relfence/issues/3)
 
-> Use the public contract to build clean, leaky and incomplete cases. Keep the new cases and expected verdicts in a separate checkout until the oracle and adapter commits are fixed. Record the case-set digest before integration. At integration, publish the cases and a table of expected versus observed verdicts, including misses and false alarms. For one real task, run the clean and leaky extractions with the same model, split, seed and training settings. Report the task metric, paired difference and run IDs, even if the difference is zero.
+### 2. Blind evaluation and mutation testing
 
-### Integration handoff
+Build clean, leaky, and incomplete cases in a separate checkout and record the case-set digest before checking the pinned oracle and adapter revisions. Exercise cutoff equality, future backfills, and immature context labels. Include a valid historical row version and cases with missing or overlapping intervals. Publish expected and observed verdicts, misses, and false alarms. Record elapsed time and peak memory on a pinned scale case with at least one million lineage edges. [Oracle acceptance](https://github.com/Guoquan01/relfence/issues/2) · [Blind and paired evaluation](https://github.com/Guoquan01/relfence/issues/4)
 
-The reviewer pins the three revisions, reruns the CLI from a fresh checkout and executes the emitted SQL in a new DuckDB connection. Publish commands, manifests, case counts and observed results together. Track multi-task coverage and packaging separately so reviewers can reproduce the first result while later work is in progress.
+### 3. Independent replay and reporting
+
+Rebuild the extraction from a fresh checkout and replay each candidate witness in a new DuckDB connection. For paired evaluations, vary the audited input policy while holding the data revision, split, seed, model, and training settings fixed. Record both run IDs, both scores, and the signed difference in ROC-AUC, MAE, or MAP as appropriate. Report rank changes where the same models were compared in both conditions. Add reproducible results to the scoreboard and draft upstream reports with the pinned source, manifest digest, and replay instructions. [Packaging and reproducibility](https://github.com/Guoquan01/relfence/issues/5)
