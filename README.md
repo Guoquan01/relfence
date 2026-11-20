@@ -8,6 +8,8 @@ RelFence checks whether the records used to make a prediction were available at 
 
 ## Reproduce it
 
+You can also inspect the [deliberately failing pull request](https://github.com/Guoquan01/relfence/pull/1). It changes one line to select the extraction with the missing second-hop cutoff. The check summary includes the gate verdict and the replayable query.
+
 Requires Python 3.11+ and a checkout of this repository. Run from its root.
 
 ```sh
@@ -36,3 +38,5 @@ The seed contains 200 synthetic rows in four inspectable CSVs. Its DuckDB checke
 This alpha supports immutable CSV rows, single-column keys, and one recorded lineage path per item. An empty extraction, an unresolved join, or a read from a mutable table yields insufficient evidence. Full RelBench adapters, blind evaluation, and model score comparisons are planned. [Input contract](./SPEC.md) · [Parallel agent assignments](./WORKSTREAMS.md)
 
 For a real benchmark example of why this matters, the RelArena-α authors report that affected methods scored two to six ROC-AUC points lower after a label fix on `rel-event/user-ignore`. Their result comes from reevaluating the benchmark. The RelFence demo above uses synthetic votes. [RelArena-α §1.2](https://arxiv.org/html/2608.16319#S1.SS2) · [Upstream RelBench fix](https://github.com/snap-stanford/relbench/pull/357)
+
+Roadmap: [versioned rows](https://github.com/Guoquan01/relfence/issues/2) · [benchmark adapters](https://github.com/Guoquan01/relfence/issues/3) · [blind and paired evaluation](https://github.com/Guoquan01/relfence/issues/4) · [packaging and reproducibility](https://github.com/Guoquan01/relfence/issues/5).
