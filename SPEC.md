@@ -1,42 +1,97 @@
-# RelFence v0.1 — Temporal leakage audit contract
+# RelFence v0.1 — Specification & Input Contract
 
-**Status:** Proposed specification; no implementation shipped. RelFence is a CI gate for exported graph and in-context inputs. It checks what was knowable at prediction time and returns a replayable witness when it proves a leak. See [RelArena-α §1.2](https://arxiv.org/html/2608.16319#S1.SS2) for a motivating benchmark correction.
+**Status:** Frozen Draft (Phase 0)  
+**Purpose:** Open-source CI release gate for detecting temporal leakage in relational machine learning pipelines (graph subgraphs and in-context examples) with minimal runnable witnesses and fail-closed epistemic reporting.
 
-## Input: `relfence.manifest.json`
+Temporal leakage in multi-table relational benchmarks silently inflates reported performance—for example, [RelArena-α (§1.2)](https://arxiv.org/html/2608.16319#S1.SS2) reported that affected methods scored 2–6 ROC-AUC points lower on `rel-event/user-ignore` when reevaluated after a temporal-leakage fix. RelFence verifies record availability hop-by-hop, checks historical context-label maturity, and traces how offending rows entered model inputs before benchmark numbers are published.
 
-| Section | Required fields |
-| --- | --- |
-| Identity | `schema_version`, `run_id`, `dataset_revision`, `task_id`, `task_type` (classification, regression, ranking). |
-| `tables[]`, `relationships[]` | Table `name`, `uri`, `sha256`, `primary_key`, `row_version_col` for mutable data, and `available_at_col`. Each relationship names both tables, join columns and a stable ID. Availability means when that exact version became usable, not when the event happened. |
-| `examples[]`, `expected_inputs[]` | `example_id`, versioned `root_ref`, `prediction_cutoff`. Capture expected `(example_id, input_id)` independently at the model-input boundary for the same run; explicitly mark legitimate empty inventories. |
-| `model_inputs` | Export and lineage references with SHA-256 digests. Each consumed input has `example_id`, `input_id`, `role`, and ordered paths of versioned row references (table, primary key, version), each step naming the relationship and direction. |
-| Context | Context features carry `context_anchor`. Context labels also carry `label_window_end`, `label_available_at`, and contributor lineage. UTC RFC 3339 timestamps; replay uses the declared cutoff policy. |
+## 1. Three-Valued Verdict & CI Exit Codes
 
-## Rules and CI verdict
+RelFence never silently passes an audit when required provenance is absent. Every run terminates with one of three deterministic verdicts:
 
-- **L1/L2, row visibility:** Every consumed row version, including the root and intermediate bridge rows, must be available by its effective cutoff. Use the prediction cutoff for prediction features and the historical anchor for context features. The historical anchor must precede prediction; other cutoff checks are inclusive (`<=`).
-- **L3, context label readiness:** The label window must have closed and both the label and its contributors must be available by the prediction cutoff. A closed window alone does not prove readiness.
-- **`fail_leakage` (1):** At least one verified violation; emit a witness even if other inputs lack evidence.
-- **`insufficient_evidence` (2):** No proven leak, but the independent inventory is absent or has missing, extra, duplicate, or untraced inputs; a required timestamp, version, label bound, digest, or join reference is missing, ambiguous, or unverifiable. A current-state overwrite cannot establish historical values.
-- **`pass` (0):** All expected inputs are accounted for and all declared checks pass. CI blocks either nonzero result. Opaque pipelines and correlation-only proxy detection are outside the proof scope.
+| Verdict | Exit Code | Meaning |
+| :--- | :---: | :--- |
+| `PASS` | `0` | All audited inputs have complete timestamp and row-level lineage metadata, and zero temporal violations were found. |
+| `FAIL_LEAKAGE` | `1` | One or more temporal violations were proven. At least one minimal runnable witness is emitted. |
+| `INSUFFICIENT_EVIDENCE` | `2` | Required availability timestamps, label-window bounds, version history, or row-level lineage are missing or ambiguous. |
 
-## Witness output: `witnesses.json` (illustrative record)
+Example CI invocation:
+
+```bash
+$ relfence check --manifest relfence.manifest.json --out witnesses.json
+[FAIL_LEAKAGE] 1 violation (L2: Multi-Hop Future Bridge) | witness -> witnesses.json
+exit status 1
+```
+
+## 2. Frozen Input Contract
+
+A RelFence audit takes a single JSON manifest (`relfence.manifest.json`) pointing to pinned local tables (Parquet/CSV/DuckDB) and extracted model inputs.
+
+| Section | Required Fields | Semantics |
+| :--- | :--- | :--- |
+| `tables[]` | `name`, `uri`, `sha256`, `primary_key`, `available_at_col`, `foreign_keys[]`, `is_mutable` | Raw relational tables. `available_at_col` must record when a row became knowable (not merely event start time if ingestion lags). Mutable tables without version history (`valid_from` / `valid_to`) trigger `INSUFFICIENT_EVIDENCE` if queried. |
+| `task` | `task_id`, `task_type` (`classification`, `regression`, or `ranking`), `entity_table`, `entity_pk`, `prediction_cutoff_col`, `label_window_end_col` | Defines the prediction cutoff `t_c` and the time `t_y` when each target label matures. |
+| `model_inputs` | `format` (`graph_subgraph` or `in_context_examples`), `uri`, `sha256`, `lineage_map_uri` | Extracted per-prediction subgraphs or historical context examples, with row-level lineage pointers `(prediction_id -> source_table, source_pk, join_path)`. |
+| `policy` | `strict_inequality` (default `true`), `timezone` (default `UTC`) | Enforces `available_at < prediction_cutoff` when `true` (`<=` only if explicitly declared and logged). |
+
+## 3. In-Scope Violation Classes & Proof Boundaries
+
+### Detectable Violation Classes (v0.1)
+
+| Code | Name | Rule Checked | Verdict |
+| :--- | :--- | :--- | :--- |
+| `L1` | Direct Future Record | A 1-hop source row included in model input has `available_at >= prediction_cutoff` (or `>` under inclusive policy). | `FAIL_LEAKAGE` |
+| `L2` | Multi-Hop Future Bridge | A multi-hop foreign-key path pulls an intermediate edge or destination row whose `available_at` violates `prediction_cutoff`. | `FAIL_LEAKAGE` |
+| `L3` | Immature Context Label | A historical in-context example attached to a prediction at `t_c` has `context.label_window_end > prediction_cutoff` (outcome was not yet knowable at `t_c`). | `FAIL_LEAKAGE` |
+| `E1` | Missing Lineage / Unversioned Mutation | Row-level lineage cannot map a feature or edge back to source primary keys, or a mutable dimension table lacks version timestamps. | `INSUFFICIENT_EVIDENCE` |
+
+### Explicit Proof Limits (What RelFence Does Not Claim)
+
+- **No correlation-only proxy detection:** Contemporaneous proxy columns without explicit derivation rules cannot be proven leaky by statistical correlation alone and are out of scope for deterministic v0.1 gating.
+- **No arbitrary pipeline introspection:** RelFence audits pipelines that expose the frozen manifest and row-level lineage contract above; opaque feature dumps without lineage receive `INSUFFICIENT_EVIDENCE`.
+- **Pinned checksums, not universal bit-exactness:** SHA-256 checksums verify pinned input manifests and emitted witness artifacts from a clean checkout; they do not guarantee bit-identical model training metrics across differing hardware or OS environments.
+
+## 4. Minimal Runnable Witness Schema
+
+Every `FAIL_LEAKAGE` verdict writes a JSON witness file (`witnesses.json`) containing the smallest concrete counterexample per violation class, plus a self-contained DuckDB query that directly proves the cutoff violation:
 
 ```json
 {
-  "schema_version": "0.1", "verdict": "fail_leakage", "rule": "L2",
-  "task_id": "demo", "example_id": "p1", "input_id": "g1",
-  "prediction_cutoff": "2026-01-10T10:00:00Z",
-  "effective_cutoff": "2026-01-10T10:00:00Z",
-  "offending": {"table":"merchant","pk":{"id":"m7"},"version":"v2",
-                "field":"available_at","value":"2026-01-10T10:05:00Z"},
-  "path": [
-    {"from":"user:u1","relationship":"order.user_id","direction":"reverse","to":"order:o4"},
-    {"from":"order:o4","relationship":"order.merchant_id","direction":"forward","to":"merchant:m7:v2"}
+  "schema_version": "0.1.0",
+  "verdict": "FAIL_LEAKAGE",
+  "violation_code": "L2",
+  "task_id": "rel-example/user-churn",
+  "prediction_id": "pred_849201",
+  "prediction_cutoff": "2024-06-01T00:00:00Z",
+  "offending_row": {
+    "table": "transactions",
+    "primary_key": {"tx_id": "tx_9918442"},
+    "available_at": "2024-06-03T14:22:10Z",
+    "delta_seconds": 224530
+  },
+  "join_path": [
+    {"hop": 0, "table": "users", "pk": "u_4021", "via_fk": null},
+    {"hop": 1, "table": "orders", "pk": "o_77310", "via_fk": "orders.user_id = users.user_id"},
+    {"hop": 2, "table": "transactions", "pk": "tx_9918442", "via_fk": "transactions.order_id = orders.order_id"}
   ],
-  "replay": {"manifest_sha256":"<digest>","fixture_ref":"case-01",
-             "sql_ref":"replay/case-01.sql","expected_verdict":"fail_leakage"}
+  "repro_duckdb_sql": "SELECT u.user_id, o.order_id, t.tx_id, t.available_at, TIMESTAMP '2024-06-01T00:00:00Z' AS prediction_cutoff, epoch(t.available_at - TIMESTAMP '2024-06-01T00:00:00Z') AS delta_seconds FROM users u JOIN orders o ON o.user_id = u.user_id JOIN transactions t ON t.order_id = o.order_id WHERE u.user_id = 'u_4021' AND t.tx_id = 'tx_9918442' AND t.available_at >= TIMESTAMP '2024-06-01T00:00:00Z';",
+  "manifest_sha256": "<sha256-of-pinned-relfence.manifest.json>"
 }
 ```
 
-Emit one sufficient ordered path per finding. The replay pins a source slice and DuckDB query that reproduce the violation, not just the join. Evidence gaps instead name the missing fields or unresolved references. Test clean, leaking, and incomplete exports separately, including cutoff equality, against independently written fixtures.
+## 5. Independent Workstream Architecture & Release Acceptance Gates
+
+To prevent shared assumptions between the auditor and the pipelines under test, development is partitioned into isolated workstreams coordinated via Devin Bot, with all PRs human-reviewed against this frozen contract:
+
+| Workstream | Isolation Boundary | Primary Deliverable |
+| :--- | :--- | :--- |
+| **A. Reference Oracle** | Reads only this spec and raw tables; never imports pipeline adapter code. | Independent DuckDB checker + witness generator + CLI exit gate. |
+| **B. Dual Task Adapters** | Implements two independent extraction pipelines (graph subgraphs and in-context examples) across classification, regression, and ranking tasks. | Manifest emitters + paired clean-vs-leaky evaluation harness (fixed model and split). |
+| **C. Blind Adversarial Suite** | Generates held-back leaky and clean-control fixtures unseen by Workstreams A & B prior to integration. | Blind integration test suite + missing-lineage `INSUFFICIENT_EVIDENCE` controls. |
+
+### v0.1 Release Acceptance Criteria
+
+1. **Zero misses on seeded & held-back leaks:** 100% recall across `L1`, `L2`, and `L3` fixtures, each accompanied by a runnable DuckDB witness.
+2. **Zero false alarms:** 0% false-positive rate on verified clean controls across all three task types.
+3. **Fail-closed honesty:** 100% `INSUFFICIENT_EVIDENCE` (exit `2`) on missing-lineage and unversioned-mutation fixtures.
+4. **Reproducible clean checkout:** Pinning the manifest and running `relfence check` from a fresh checkout reproduces identical verdicts and witness checksums, published alongside paired clean-vs-leaky model scores and a Devin Bot cross-workstream audit case study.
