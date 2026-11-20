@@ -4,11 +4,11 @@
 
 RelFence checks whether the records used to make a prediction were available at the time. On a leak it returns the offending row, the foreign-key path that brought it into the input, and SQL that reproduces the result from the raw tables.
 
-**One vote demonstrates the bug.** On June 1, user `u001` already owned post `p001`. Vote `v002` arrived on June 2. A graph query that filters the post date but skips the vote date lets that vote into the June 1 prediction. DuckDB joins the original rows and reports a difference of exactly **86,400 seconds**. [Read the witness](./examples/seed/l2.witness.json) · [Compare the Cypher predicates](./examples/cypher/extract.py)
+**One vote demonstrates the bug.** On June 1, user `u001` already owned post `p001`. Vote `v002` arrived on June 2. A graph query that filters the post date but skips the vote date lets that vote into the June 1 prediction. DuckDB joins the original rows and reports a difference of exactly **86,400 seconds**. [Read the witness](./examples/seed/l2.witness.json) · [Read the Cypher query](./examples/cypher/query.cypher)
 
 ## Reproduce it
 
-You can also inspect the [deliberately failing pull request](https://github.com/Guoquan01/relfence/pull/1). It changes one line to select the extraction with the missing second-hop cutoff. The check summary includes the gate verdict and the replayable query.
+The [demo pull request](https://github.com/Guoquan01/relfence/pull/1) removes the vote cutoff from the query. The public bot comment on the PR contains the CLI verdict, exact SQL and witness JSON.
 
 Requires Python 3.11+ and a checkout of this repository. Run from its root.
 
@@ -33,7 +33,7 @@ The three exit codes distinguish a clean extraction, a proven leak, and a case w
 
 ## What the alpha covers
 
-The seed contains 200 synthetic rows in four inspectable CSVs. Its DuckDB checker verifies file digests, joins row keys against declared foreign keys and audits UTC availability and label maturity. A separate [stock Memgraph demo](./examples/cypher/README.md) extracts the graph inputs with Cypher. Its CI job runs both queries, audits their actual outputs and replays the SQL in a fresh DuckDB connection. Core tests run without Docker.
+The seed contains 200 synthetic rows in four inspectable CSVs. Its DuckDB checker verifies file digests, joins row keys against declared foreign keys and audits UTC availability and label maturity. A separate [stock Memgraph demo](./examples/cypher/README.md) runs the checked-in query and two reference controls against the same graph. CI audits their actual outputs and replays the leaky control's SQL in a fresh DuckDB connection. Core tests run without Docker.
 
 This alpha supports immutable CSV rows, single-column keys, and one recorded lineage path per item. An empty extraction, an unresolved join, or a read from a mutable table yields insufficient evidence. Full RelBench adapters, blind evaluation, and model score comparisons are planned. [Input contract](./SPEC.md) · [Parallel agent assignments](./WORKSTREAMS.md)
 

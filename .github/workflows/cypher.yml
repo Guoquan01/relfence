@@ -8,6 +8,11 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
+
+concurrency:
+  group: cypher-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cypher-pipeline-audit:
@@ -22,11 +27,13 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install '.[cypher]'
-      - name: Extract identical neighborhoods with one changed predicate
+      - name: Run query.cypher and both reference controls
         run: python examples/cypher/extract.py --out "$RUNNER_TEMP/extraction"
       - name: Check clean and leaky predictions, then replay the SQL witness
         run: |
@@ -61,20 +68,60 @@ jobs:
               print("The second query admitted vote `v002` exactly one day after the cutoff.", file=summary)
               print("\n```sql\n" + witness["repro_duckdb_sql"] + "\n```", file=summary)
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: audited-cypher-inputs
-          path: ${{ runner.temp }}/extraction
-      - name: Gate the selected Cypher extraction
+      - name: Gate query.cypher
+        id: gate
+        working-directory: ${{ runner.temp }}/extraction/active
         run: |
-          mode=$(cat examples/cypher/active-mode.txt)
-          cd "$RUNNER_TEMP/extraction/$mode"
           status=0
-          relfence check --manifest manifest.json --out gate-report.json || status=$?
+          relfence check --manifest manifest.json --out gate-report.json > verdict.txt || status=$?
+          cat verdict.txt
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           {
-            echo "### Selected extraction \`$mode\` (exit $status)"
+            echo "### query.cypher (exit $status)"
             echo '~~~json'
             cat gate-report.json
             echo '~~~'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      - name: Publish the verdict on the pull request
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.gate.outputs.exit_code != '' }}
+        uses: actions/github-script@v7
+        env:
+          EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
+        with:
+          script: |
+            const { readFileSync } = require('node:fs')
+            const { join } = require('node:path')
+            const dir = join(process.env.RUNNER_TEMP, 'extraction', 'active')
+            const verdict = readFileSync(join(dir, 'verdict.txt'), 'utf8').trimEnd()
+            const report = JSON.parse(readFileSync(join(dir, 'gate-report.json'), 'utf8'))
+            const marker = '<!-- relfence-cypher-gate -->'
+            const deltas = report.witnesses.map(w => w.violation_code + ' +' + w.offending_row.delta_seconds + 's')
+            const status = ['`' + verdict + '`', 'exit code ' + process.env.EXIT_CODE, ...deltas]
+            const lines = [marker, '### RelFence Cypher audit', '', status.join(' · ')]
+            for (const witness of report.witnesses) {
+              lines.push('', 'Replay from `examples/seed/` in a fresh DuckDB connection.',
+                '', '```sql', witness.repro_duckdb_sql, '```',
+                '', 'Witness JSON', '', '```json', JSON.stringify(witness), '```')
+            }
+            const body = lines.join('\n')
+            const issue = { ...context.repo, issue_number: context.issue.number }
+            const comments = await github.paginate(github.rest.issues.listComments, issue)
+            const previous = comments.find(c =>
+              c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker))
+            try {
+              if (previous) {
+                await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body })
+              } else {
+                await github.rest.issues.createComment({ ...issue, body })
+              }
+            } catch (error) {
+              const external = context.payload.pull_request.head.repo?.full_name !== context.payload.repository.full_name
+              if (error.status !== 403 || !external) throw error
+              core.warning('GitHub gave this fork a read-only token. The verdict is in the job summary.')
+            }
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.gate.outputs.exit_code != '' }}
+        with:
+          name: audited-cypher-inputs
+          path: ${{ runner.temp }}/extraction

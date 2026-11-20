@@ -1,4 +1,4 @@
-"""Extract clean and intentionally leaky neighborhoods from a disposable Memgraph."""
+"""Run the checked-in Cypher query and its two reference controls on the same graph."""
 
 import argparse
 import csv
@@ -95,9 +95,13 @@ def main():
             with session.begin_transaction() as tx:
                 load_graph(tx, tables)
                 tx.commit()
-            for mode, predicate in SECOND_HOP.items():
+            queries = {
+                mode: TRAVERSAL + predicate + PROJECTION for mode, predicate in SECOND_HOP.items()
+            }
+            queries["active"] = Path(__file__).with_name("query.cypher").read_text(encoding="utf-8")
+            for mode, query in queries.items():
                 rows = session.run(
-                    TRAVERSAL + predicate + PROJECTION,
+                    query,
                     entity=prediction["entity_id"], cutoff=prediction["cutoff"],
                 )
                 write_extraction(args.out / mode, manifest, prediction, rows)
