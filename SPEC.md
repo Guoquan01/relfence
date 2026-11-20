@@ -51,7 +51,7 @@ A RelFence audit takes a single JSON manifest (`relfence.manifest.json`) pointin
 | :--- | :--- | :--- | :--- |
 | `L1` | Direct Future Record | A 1-hop source row included in model input has `available_at >= prediction_cutoff` (or `>` under inclusive policy). | `FAIL_LEAKAGE` |
 | `L2` | Multi-Hop Future Bridge | A multi-hop foreign-key path pulls an intermediate edge or destination row whose `available_at` violates `prediction_cutoff`. | `FAIL_LEAKAGE` |
-| `L3` | Immature Context Label | A historical in-context example attached to a prediction at `t_c` has `context.label_window_end > prediction_cutoff` (outcome was not yet knowable at `t_c`). | `FAIL_LEAKAGE` |
+| `L3` | Immature Context Label | A historical context label is immature when `label_window_end > prediction_cutoff`. A window ending exactly at the cutoff is closed. Row availability is checked separately under L1/L2. | `FAIL_LEAKAGE` |
 | `E1` | Missing Lineage / Unversioned Mutation | Row-level lineage cannot map a feature or edge back to source primary keys, or a mutable dimension table lacks version timestamps. | `INSUFFICIENT_EVIDENCE` |
 
 ### Explicit Proof Limits (What RelFence Does Not Claim)

@@ -4,15 +4,15 @@ Give each agent its block below in a separate checkout of the same commit. The t
 
 ### Agent A · Reference oracle
 
-> Work only on the DuckDB checker and its unit tests. Read the contract and the pinned raw tables. Implement as-of reads for a mutable table with version intervals. Prove a future version was used by returning its key, cutoff and interval in runnable SQL. Cover a clean historical version, an exact-boundary case and missing or overlapping intervals. Return a PR, the commands you ran and one replayable witness. Keep extraction code out of this workstream.
+> The alpha loads each CSV once, then runs a DuckDB join per input item. Batch those joins over Parquet by foreign-key path and add as-of reads for versioned rows. Match the seed verdicts and replayable witnesses on the same inputs. Measure elapsed time and peak memory on a pinned input with at least one million lineage edges. Include a clean historical version, a future version, and missing or overlapping intervals. [Oracle acceptance criteria](https://github.com/Guoquan01/relfence/issues/2)
 
 ### Agent B · Benchmark adapters
 
-> Take one public RelBench task first. Record the dataset version, task name and split so another person can fetch exactly what you used. Export one graph neighborhood and one historical context bundle with the row keys, foreign-key hops and timestamps actually read by each pipeline. Start with one prediction that a reviewer can trace by hand. Return a PR with the two manifests, their reproduction commands and any input you could not trace. Expand to classification, regression and ranking after the first pair reproduces.
+> Start with one prediction on `rel-event/user-ignore` (classification). Export its graph neighborhood and historical context bundle with the row keys, foreign-key hops and timestamps actually read. Pin the dataset version, split and cutoff, and give a command to reproduce each manifest. Once that pair reproduces, target `rel-stack/post-votes` (regression) and `rel-hm/user-item-purchase` (recommendation ranking). Record any input you could not trace. [Task scope and dataset sizes](https://github.com/Guoquan01/relfence/issues/3)
 
 ### Agent C · Independent evaluation
 
-> Use the public contract to build clean, leaky and incomplete cases. Keep the new cases and expected verdicts in a separate checkout until the oracle and adapter commits are fixed. Record the case-set digest before integration. At integration, publish the cases and a table of expected versus observed verdicts, including misses and false alarms. For one real task, run the clean and leaky extractions with the same model, split, seed and training settings. Report the task metric, paired difference and run IDs, even if the difference is zero.
+> Use the public contract to build clean, leaky and incomplete cases. Keep the new cases and expected verdicts in a separate checkout until the oracle and adapter commits are fixed. Record the case-set digest before integration. Publish expected and observed verdicts, including misses and false alarms. On each evaluated task, keep the model, split, seed and training settings fixed. Publish both scores, their signed difference and the run IDs. Report any rank change among models evaluated in both conditions. [Paired results table](https://github.com/Guoquan01/relfence/issues/4)
 
 ### Integration handoff
 
