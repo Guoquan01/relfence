@@ -1,41 +1,38 @@
 # RelFence
 
-Open-source CI release gate for detecting temporal leakage in relational machine learning pipelines.
+[![DuckDB oracle](https://github.com/Guoquan01/relfence/actions/workflows/core.yml/badge.svg?branch=main)](https://github.com/Guoquan01/relfence/actions/workflows/core.yml) [![Cross-engine Cypher audit](https://github.com/Guoquan01/relfence/actions/workflows/cypher.yml/badge.svg?branch=main)](https://github.com/Guoquan01/relfence/actions/workflows/cypher.yml)
 
-**Status:** Phase 0 — v0.1 specification frozen in [SPEC.md](https://www.google.com/search?q=./SPEC.md). Implementation has not started yet.
+RelFence checks whether the records used to make a prediction were available at the time. On a leak it returns the offending row, the foreign-key path that brought it into the input, and SQL that reproduces the result from the raw tables.
 
-## Why RelFence
+**One vote demonstrates the bug.** On June 1, user `u001` already owned post `p001`. Vote `v002` arrived on June 2. A graph query that filters the post date but skips the vote date lets that vote into the June 1 prediction. DuckDB joins the original rows and reports a difference of exactly **86,400 seconds**. [Read the witness](./examples/seed/l2.witness.json) · [Compare the Cypher predicates](./examples/cypher/extract.py)
 
-Temporal leakage in multi-table relational benchmarks silently inflates reported metrics. For example, [RelArena-α (§1.2)](https://arxiv.org/html/2608.16319#S1.SS2) reported that affected methods scored 2–6 ROC-AUC points lower on `rel-event/user-ignore` when reevaluated after a temporal-leakage fix.
+## Reproduce it
 
-A single timestamp filter is easy to bypass in relational pipelines: a multi-hop foreign-key join can pull in a record that arrived after prediction time, or an in-context historical training example can include a label whose outcome window had not yet closed at the prediction cutoff.
+Requires Python 3.11+ and a checkout of this repository. Run from its root.
 
-## Planned v0.1 Behavior
-
-- **Hop-by-hop & maturity verification:** Checks record availability timestamps across multi-hop joins and verifies that historical context labels matured before the prediction cutoff.
-- **Minimal runnable witnesses:** On failure, emits the prediction cutoff, offending row, exact join path, and a self-contained DuckDB query reproducing the violation.
-- **Fail-closed CI verdicts:** Exits `0` (`PASS`), `1` (`FAIL_LEAKAGE`), or `2` (`INSUFFICIENT_EVIDENCE`) when required timestamps, version history, or row-level lineage are missing—never silently passing an unverified pipeline.
-
-```bash
-$ relfence check --manifest relfence.manifest.json --out witnesses.json
-[FAIL_LEAKAGE] 1 violation (L2: Multi-Hop Future Bridge) | witness -> witnesses.json
-exit status 1
+```sh
+python -m pip install .
+cd examples/seed
+relfence check --manifest clean.manifest.json --out report.json  # exit 0
+relfence check --manifest l2.manifest.json --out report.json     # exit 1
+python -c "import duckdb,json; q=json.load(open('report.json'))['witnesses'][0]['repro_duckdb_sql']; print(duckdb.sql(q))"
+relfence check --manifest missing.manifest.json --out report.json  # exit 2
 ```
 
-## Specification & Roadmap
+The three exit codes distinguish a clean extraction, a proven leak, and a case where the evidence is incomplete. For example, removing the lineage entry for the late vote yields exit 2 even though the raw vote is still present.
 
-Full input contract, violation taxonomy (`L1`–`L3`, `E1`), witness JSON schema, and release acceptance criteria are frozen in [SPEC.md](https://www.google.com/search?q=./SPEC.md).
+| Pinned input | Expected result |
+| --- | --- |
+| [Clean two-hop path](./examples/seed/clean.manifest.json) | Pass |
+| [Future post](./examples/seed/l1.manifest.json) | L1 · direct future record |
+| [Future vote](./examples/seed/l2.manifest.json) | L2 · future record on a two-hop path |
+| [Immature historical label](./examples/seed/l3.manifest.json) | L3 · label window still open |
+| [Missing vote lineage](./examples/seed/missing.manifest.json) | Insufficient evidence |
 
-1. **Reference Oracle & CI Gate:** Independent DuckDB checker, witness generator, seeded leak fixtures, and fail-closed `INSUFFICIENT_EVIDENCE` controls.
-2. **Dual Pipeline Adapters:** Two independent extraction implementations covering graph subgraphs and in-context examples across classification, regression, and ranking tasks.
-3. **Blind Adversarial & Paired Evaluation:** Held-back test fixtures unseen prior to integration, differential cross-checks, and paired clean-vs-leaky evaluations with model and split held fixed.
-4. **Release & CI Integration:** PyPI package, GitHub Actions workflow, checksum-verified clean-checkout reproduction of pinned inputs and outputs, and a public cross-workstream audit case study.
+## What the alpha covers
 
-## Explicit Proof Limits
+The seed contains 200 synthetic rows in four inspectable CSVs. Its DuckDB checker verifies file digests, joins row keys against declared foreign keys and audits UTC availability and label maturity. A separate [stock Memgraph demo](./examples/cypher/README.md) extracts the graph inputs with Cypher. Its CI job runs both queries, audits their actual outputs and replays the SQL in a fresh DuckDB connection. Core tests run without Docker.
 
-- RelFence does not flag contemporaneous proxy columns from statistical correlation alone without explicit derivation rules.
-- SHA-256 checksums verify pinned input manifests and emitted witness artifacts from a clean checkout; they do not guarantee bit-exact model training metrics across different hardware or OS environments.
+This alpha supports immutable CSV rows, single-column keys, and one recorded lineage path per item. An empty extraction, an unresolved join, or a read from a mutable table yields insufficient evidence. Full RelBench adapters, blind evaluation, and model score comparisons are planned. [Input contract](./SPEC.md) · [Parallel agent assignments](./WORKSTREAMS.md)
 
-## Reference
-
-- RelArena-α (§1.2): https://arxiv.org/html/2608.16319#S1.SS2
+For a real benchmark example of why this matters, the RelArena-α authors report that affected methods scored two to six ROC-AUC points lower after a label fix on `rel-event/user-ignore`. Their result comes from reevaluating the benchmark. The RelFence demo above uses synthetic votes. [RelArena-α §1.2](https://arxiv.org/html/2608.16319#S1.SS2) · [Upstream RelBench fix](https://github.com/snap-stanford/relbench/pull/357)

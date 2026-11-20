@@ -1,0 +1,77 @@
+{
+  "tables": [
+    {
+      "name": "users",
+      "uri": "tables/users.csv",
+      "sha256": "be5b472d6bfe26719f041122fd622fc19829d30aa21bcf6057954efd6f8276af",
+      "primary_key": "user_id",
+      "available_at_col": "available_at",
+      "foreign_keys": [],
+      "is_mutable": false
+    },
+    {
+      "name": "posts",
+      "uri": "tables/posts.csv",
+      "sha256": "4cfb49162ef572c0fe900afee87bf812b9bd510929862323ba342da7c7af2838",
+      "primary_key": "post_id",
+      "available_at_col": "available_at",
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "users",
+          "references_column": "user_id"
+        }
+      ],
+      "is_mutable": false
+    },
+    {
+      "name": "votes",
+      "uri": "tables/votes.csv",
+      "sha256": "03b9ecd2d2360603e1c5e4ef0585082cdd3252e54b25c777cd978c9fc8ea7211",
+      "primary_key": "vote_id",
+      "available_at_col": "available_at",
+      "foreign_keys": [
+        {
+          "column": "post_id",
+          "references_table": "posts",
+          "references_column": "post_id"
+        }
+      ],
+      "is_mutable": false
+    },
+    {
+      "name": "badges",
+      "uri": "tables/badges.csv",
+      "sha256": "5337119963bb7eb2842eba900cf4d0ea4614d9647648b1c2489d871e3b812351",
+      "primary_key": "badge_id",
+      "available_at_col": "available_at",
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "users",
+          "references_column": "user_id"
+        }
+      ],
+      "is_mutable": false
+    }
+  ],
+  "task": {
+    "task_id": "synthetic/user-activity",
+    "task_type": "classification",
+    "entity_table": "users",
+    "entity_pk": "user_id",
+    "prediction_cutoff_col": "cutoff",
+    "label_window_end_col": "label_window_end"
+  },
+  "model_inputs": {
+    "format": "graph_subgraph",
+    "uri": "inputs/l2.jsonl",
+    "sha256": "a6da8154ebc698f6e19cc3927d9f379b9624f50763b0a91236b4efb599c3bcc1",
+    "lineage_map_uri": "inputs/l2.lineage.jsonl",
+    "lineage_map_sha256": "cc7212fde35013424df977b9fb76d9af73befd666ca488e112804b17f4b3cf38"
+  },
+  "policy": {
+    "strict_inequality": true,
+    "timezone": "UTC"
+  }
+}

@@ -1,0 +1,2 @@
+{"prediction_id":"pred-001","item_id":"v001","join_path":[{"table":"users","pk":"u001"},{"table":"posts","pk":"p001"},{"table":"votes","pk":"v001"}]}
+{"prediction_id":"pred-001","item_id":"v002","join_path":[{"table":"users","pk":"u001"},{"table":"posts","pk":"p001"},{"table":"votes","pk":"v002"}]}

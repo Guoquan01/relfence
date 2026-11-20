@@ -1,0 +1,1 @@
+{"prediction_id":"pred-002","item_id":"p002","join_path":[{"table":"users","pk":"u002"},{"table":"posts","pk":"p002"}]}

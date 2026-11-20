@@ -1,0 +1,1 @@
+{"prediction_id":"pred-001","item_id":"b001","join_path":[{"table":"users","pk":"u001"},{"table":"badges","pk":"b001"}]}

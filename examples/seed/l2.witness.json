@@ -1,0 +1,48 @@
+{
+  "input_count": 2,
+  "manifest_sha256": "6a78be89089887b8fa5dfccb72977f2c0579e997c971b883446c1dbf08c30e30",
+  "strict_inequality": true,
+  "verdict": "FAIL_LEAKAGE",
+  "violation_count": 1,
+  "witnesses": [
+    {
+      "item_id": "v002",
+      "join_path": [
+        {
+          "hop": 0,
+          "pk": "u001",
+          "table": "users",
+          "via_fk": null
+        },
+        {
+          "hop": 1,
+          "pk": "p001",
+          "table": "posts",
+          "via_fk": "users.user_id = posts.user_id"
+        },
+        {
+          "hop": 2,
+          "pk": "v002",
+          "table": "votes",
+          "via_fk": "posts.post_id = votes.post_id"
+        }
+      ],
+      "manifest_sha256": "6a78be89089887b8fa5dfccb72977f2c0579e997c971b883446c1dbf08c30e30",
+      "offending_row": {
+        "available_at": "2024-06-02T00:00:00Z",
+        "delta_seconds": 86400.0,
+        "primary_key": {
+          "vote_id": "v002"
+        },
+        "table": "votes"
+      },
+      "prediction_cutoff": "2024-06-01T00:00:00Z",
+      "prediction_id": "pred-001",
+      "repro_duckdb_sql": "SET TimeZone = 'UTC';\nSELECT r0.\"user_id\" AS hop_0_pk, r1.\"post_id\" AS hop_1_pk, r2.\"vote_id\" AS hop_2_pk, CAST(r2.\"available_at\" AS TIMESTAMPTZ) AS available_at, TIMESTAMPTZ '2024-06-01T00:00:00Z' AS prediction_cutoff, epoch(CAST(r2.\"available_at\" AS TIMESTAMPTZ) - TIMESTAMPTZ '2024-06-01T00:00:00Z') AS delta_seconds\nFROM read_csv('tables/users.csv', header=true, all_varchar=true, delim=',') AS r0\nJOIN read_csv('tables/posts.csv', header=true, all_varchar=true, delim=',') AS r1 ON r0.\"user_id\" = r1.\"user_id\"\nJOIN read_csv('tables/votes.csv', header=true, all_varchar=true, delim=',') AS r2 ON r1.\"post_id\" = r2.\"post_id\"\nWHERE r0.\"user_id\" = 'u001' AND r1.\"post_id\" = 'p001' AND r2.\"vote_id\" = 'v002' AND CAST(r2.\"available_at\" AS TIMESTAMPTZ) >= TIMESTAMPTZ '2024-06-01T00:00:00Z';",
+      "schema_version": "0.1.0",
+      "task_id": "synthetic/user-activity",
+      "verdict": "FAIL_LEAKAGE",
+      "violation_code": "L2"
+    }
+  ]
+}

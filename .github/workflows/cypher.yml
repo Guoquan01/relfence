@@ -1,0 +1,76 @@
+name: Cross-engine Cypher audit
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  cypher-pipeline-audit:
+    runs-on: ubuntu-latest
+    services:
+      memgraph:
+        image: memgraph/memgraph:3.14.0
+        ports:
+          - 17687:7687
+        options: >-
+          --health-cmd "echo 'RETURN 0;' | mgconsole"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[cypher]'
+      - name: Extract identical neighborhoods with one changed predicate
+        run: python examples/cypher/extract.py --out "$RUNNER_TEMP/extraction"
+      - name: Check clean and leaky predictions, then replay the SQL witness
+        run: |
+          cd "$RUNNER_TEMP/extraction"
+          relfence check --manifest clean/manifest.json --out clean/report.json
+          code=0
+          relfence check --manifest leaky-twohop/manifest.json --out leaky-twohop/report.json || code=$?
+          test "$code" -eq 1
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          import duckdb
+
+          def items(mode):
+              return [json.loads(line)["item_id"] for line in Path(mode, "inputs.jsonl").read_text().splitlines()]
+
+          assert items("clean") == ["v001"]
+          assert items("leaky-twohop") == ["v001", "v002"]
+          os.chdir("leaky-twohop")
+          report = json.loads(Path("report.json").read_text())
+          assert report["verdict"] == "FAIL_LEAKAGE"
+          witness, = report["witnesses"]
+          assert witness["violation_code"] == "L2"
+          assert [hop["pk"] for hop in witness["join_path"]] == ["u001", "p001", "v002"]
+          with duckdb.connect() as db:
+              query = db.execute(witness["repro_duckdb_sql"])
+              columns = [col[0] for col in query.description]
+              row, = query.fetchall()
+              assert row[columns.index("delta_seconds")] == 86400
+          print(dict(zip(columns, row)))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              print("The second query admitted vote `v002` exactly one day after the cutoff.", file=summary)
+              print("\n```sql\n" + witness["repro_duckdb_sql"] + "\n```", file=summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audited-cypher-inputs
+          path: ${{ runner.temp }}/extraction
+      - name: Gate the selected Cypher extraction
+        run: |
+          mode=$(cat examples/cypher/active-mode.txt)
+          cd "$RUNNER_TEMP/extraction/$mode"
+          status=0
+          relfence check --manifest manifest.json --out gate-report.json || status=$?
+          {
+            echo "### Selected extraction \`$mode\` (exit $status)"
+            echo '~~~json'
+            cat gate-report.json
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
