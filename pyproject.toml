@@ -8,7 +8,7 @@ version = "0.1.0a1"
 description = "Audit relational model inputs for temporal leakage with runnable DuckDB witnesses"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["duckdb>=1.2,<2", "pydantic>=2,<3"]
+dependencies = ["duckdb>=1.2,<2", "pydantic>=2,<3", "pytz"]
 
 [project.optional-dependencies]
 cypher = ["neo4j>=5,<7"]
